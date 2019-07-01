@@ -1,0 +1,632 @@
+# ##### BEGIN GPL LICENSE BLOCK #####
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License
+#  as published by the Free Software Foundation; either version 2
+#  of the License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software Foundation,
+#  Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+#
+# ##### END GPL LICENSE BLOCK #####
+
+bl_info = {
+    "name": "Kypol_mesh",
+    "author": "Fedichkina Aksinya PRI-151",
+    "version": (1, 0),
+    "blender": (2, 79, 0),
+    "location": "View3D > Tool Shelf > Object",
+    "description": "Adds a new building construction using alternating spline",
+    "warning": "",
+    "wiki_url": "",
+    "category": "Add Mesh",
+    }
+    
+import bpy
+from bpy.types import Panel
+import math
+import numpy as np
+import numpy.linalg as line
+from mathutils import Vector  
+from bpy.props import FloatProperty, StringProperty, PointerProperty
+from bpy.types import PropertyGroup
+
+def printMatr(matr, rowStart, colStart, countRow, countCols):
+    """
+    Функция вывода матрицы на экран
+    Входные параметры: matr - матрица для вывода
+                       rows - кол-во строк в матрице
+                       cols - кол-во столбцов в матрице
+    """
+    for i in range(rowStart, rowStart + countRow):
+        for j in range(colStart, colStart + countCols):
+            print(matr[j][i], end=' ')
+        print()
+
+
+def createR(pointList, k):
+    """
+    Функция формирования матрицы из 4-х узлов сплайнов
+    Входные параметры: pointList - список точек
+                       k - номер текущей начальной точки
+    Выходные параметры: R - матрица узлов сплайнов
+    """
+    R = pointList[k: k+4]
+    return R
+
+
+def createT(n, pointList):
+    """
+    Функция формирования расстояний до узловых точек
+    Входные параметры: n-число точек
+                       pointList - список точек
+    Выходные параметры: T - массив расстояний до узловых точек
+    """
+    T = [[0 for i in range(n)] for j in range(4)]
+
+    for j in range(4):
+        for i in range(1, n):
+            tmpX = (pointList[i][0]-pointList[i-1][0])**2
+            tmpY = (pointList[i][1]-pointList[i-1][1])**2
+            tmpZ = (pointList[i][2]-pointList[i-1][2])**2
+            tmpSum = (tmpX + tmpY + tmpZ)**1/2
+            T[j][i] = T[j][i - 1] + tmpSum
+    return T
+
+
+def createTk(T, k):
+    """
+    Функция формирования матрицы Tk
+    Входные параметры: T - массив расстояний до узловых точек
+                       k - номер текущей начальной точки
+    Выходные параметры: Tk - матрица Tk
+    """
+    Tk = [[0 for i in range(4)] for j in range(4)]
+
+    for i in range(4):
+        for j in range(4):
+            if i == 0:
+                Tk[j][i] = (T[i][k + j])**3
+            elif i == 1:
+                Tk[j][i] = (T[i][k + j])**2
+            else:
+                Tk[j][i] = T[i][k + j]
+            if j == 0:
+                Tk[j][i] = 0
+            if i == 3:
+                Tk[j][i] = 1
+    return Tk
+
+
+def showR(R):
+    """
+    Функция отображения матрицы R
+    Входной параметр R - матрица R
+    """
+    showR = [[0 for i in range(4)] for j in range(3)]
+    print("Matrix R")
+    for row in range(len(R)):
+        for item in range(len(R[row])):
+            showR[item][row] = R[row][item]
+    for row in showR:
+        for item in row:
+            print(item, end=" ")
+        print()
+       
+
+def draw_kypol(x, y, z, step):
+    """
+    Функция формирования mesh-объекта
+    Входные параметры: x,y,z -массивы координат точек X,Y,Z
+                       step - шаг цикла
+    """    
+    name ='Kypol'
+    coords = list(zip(x,y,z))
+    faces =[] #массив масивов индексов всех граней
+    z_index = len(coords[0])-1
+    len_coords = len(coords)
+    
+    for row in range(1,len_coords-step):    # цикл выбора индексов
+        face = []                           # массив индексов вершин одной грани
+        if coords[row-1][z_index] <= coords[row][z_index] and coords[row+step-1][z_index] <= coords[row+step][z_index]: 
+            face.append(row-1)              # нижняя левая вершина
+            face.append(row+step-2)         # нижняя правая вершина
+            face.append(row+step-1)         # верхняя правая вершина
+            face.append(row)                # верхняя левая вершина
+            tup_face = tuple(face)
+        faces.append(list(tup_face))        # "наращиваем" массив граней массивом индексов вершин грани    
+    for row in range(1,step):
+        face = []
+        if coords[row-1][z_index] <= coords[row][z_index] and coords[len_coords+row-step-1][z_index] <= coords[len_coords+row-step][z_index]: 
+            face.append(len_coords-step+row-1)
+            face.append(row-2)
+            face.append(row-1)
+            face.append(len_coords-step+row)
+            tup_face = tuple(face)
+        faces.append(list(tup_face))
+    
+    mesh = bpy.data.meshes.new(name)        # создаём полигональную решётку
+    mesh.from_pydata(coords, [], faces)     # наполняем mesh-объект ранее сгенерированной геометрией
+    
+    mesh.update()                           # обновляем mesh-объект согласно его новым данным
+    
+    obj= bpy.data.objects.new(name, mesh)   # создаём объект, связанный с созданной полигональной решёткой
+    obj.data = mesh
+    
+    scene = bpy.context.scene               # связываем объект с текущей сценой, полученной из контекста
+    scene.objects.link(obj)
+    
+    scene.objects.active = obj              # выделение объекта после его создания
+    
+    
+def main(context, x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4, x5, y5, z5, x6, y6, z6, t_step, fi_step):
+    """
+    Главная функция программы
+    """
+    n = 6                                                   # количество вершин
+    
+    pointList = [[0 for j in range(3)] for i in range(n)]   # матрица точек с координатами
+    
+    """
+    pointList = [[1.0, 0.0, 0.0],
+                [2.0, 0.0, 1.0],
+                [1.0, 0.0, 2.0],
+                [2.0, 0.0, 3.0],
+                [1.0, 0.0, 4.0],
+                [2.0, 0.0, 5.0]]
+    
+    """
+    """
+    #купол
+    pointList = [[2.0, 0.0, 0.0],
+                 [3.5, 0.0, 2.0],
+                 [5.0, 0.0, 4.0],
+                 [3.5, 0.0, 6.0],
+                 [0.25, 0.0, 9.0],
+                 [0.0, 0.0, 12.0]]
+    """
+    #стол
+    """
+    pointList = [[2.0, 0.0, 0.0],
+                 [0.5, 0.0, 1.0],
+                 [1.0, 0.0, 4.0],
+                 [0.5, 0.0, 7.0],
+                 [6.5, 0.0, 9.0],
+                 [0.0, 0.0, 9.5]]
+    """      
+    pointList = [[x1, y1, z1],
+                 [x2, y2, z2],
+                 [x3, y3, z3],
+                 [x4, y4, z4],
+                 [x5, y5, z5],
+                 [x6, y6, z6]]      
+    T = createT(n, pointList)  # формирование расстояний до узловых точек    
+        
+    x = []
+    y = []
+    z = []
+    Si = []
+    S0 = [[0 for i in range(3)] for j in range(4)]
+    S2 = [[0 for i in range(3)] for j in range(4)]
+    fi = 0.0
+
+    for k in range(0, n - 3, 2):    # для каждой точки 1,2,3...
+        R = createR(pointList, k)   # формирование матрицы R из 4-х узлов сплайнов
+        #showR(R)
+        
+        Tk = createTk(T, k)         # формирование матрицы Tk
+        print("Matrix Tk")
+        #printMatr(Tk, 0, 0, 4, 4)  # вывод матрицы Tk
+        
+        Tki = line.inv(np.array(Tk))# формирование обратной матрицы к матрице Tk
+        print("-1 Matrix Tk")
+        #printMatr(Tki, 0, 0, 4, 4) # вывод обратной матрицы к матрице Tk
+        
+        S = np.dot(Tki,R)           # формирование матрицы S
+        print("Matrix S")
+        #printMatr(S, 0, 0, 3, 4)   # вывод матрицы S
+        
+        if k == 0:
+            for i in range(3):
+                for j in range(4):
+                    S0[j][i] = S[j][i]
+        if k == 2:
+            for i in range(3):
+                for j in range(4):
+                    S2[j][i] = S[j][i]
+    
+    size = 10
+    step = 0
+ 
+    while fi <= 2 * math.pi:
+        t = T[0][0]
+        step = 0
+        while t <= T[0][n-1]:
+            if t <= T[0][2]:
+                xx = S0[0][0] * pow(t, 3) + S0[1][0] * pow(t, 2) + S0[2][0] * t + S0[3][0]          # формирование образующей
+                yy = S0[0][1] * pow(t, 3) + S0[1][1] * pow(t, 2) + S0[2][1] * t + S0[3][1]
+                zz = S0[0][2] * pow(t, 3) + S0[1][2] * pow(t, 2) + S0[2][2] * t + S0[3][2]
+                if (math.fabs(xx) <= size) and (math.fabs(yy) <= size) and (math.fabs(zz)):         # аффиное проебразование
+                    x.append(math.cos(fi) * xx - math.sin(fi) * yy)
+                    y.append(math.sin(fi) * xx + math.cos(fi) * yy)
+                    z.append(zz)
+            elif t <= T[0][3]:                                                                      # формирование образующей
+                xx = (S0[0][0] * pow(t, 3) + S0[1][0] * pow(t, 2) + S0[2][0] * t + S0[3][0]) * \
+                    ((T[0][3] - t) / (T[0][3] - T[0][2])) + \
+                     (S2[0][0] * pow(t, 3) + S2[1][0] * pow(t, 2) + S2[2][0] * t + S2[3][0]) * \
+                     (1 - ((T[0][3] - t) / (T[0][3] - T[0][2])))
+                yy = (S0[0][1] * pow(t, 3) + S0[1][1] * pow(t, 2) + S0[2][1] * t + S0[3][1]) * \
+                     ((T[0][3] - t) / (T[0][3] - T[0][2])) + \
+                     (S2[0][1] * pow(t, 3) + S2[1][1] * pow(t, 2) + S2[2][1] * t + S2[3][1]) * \
+                     (1 - ((T[0][3] - t) / (T[0][3] - T[0][2])))
+                zz = (S0[0][2] * pow(t, 3) + S0[1][2] * pow(t, 2) + S0[2][2] * t + S0[3][2]) * \
+                     ((T[0][3] - t) / (T[0][3] - T[0][2])) + \
+                     (S2[0][2] * pow(t, 3) + S2[1][2] * pow(t, 2) + S2[2][2] * t + S2[3][2]) * \
+                     (1 - ((T[0][3] - t) / (T[0][3] - T[0][2])))
+                if (math.fabs(xx) <= size) and (math.fabs(yy) <= size) and (math.fabs(zz)):         # аффиное преобразование
+                    x.append(math.cos(fi) * xx - math.sin(fi) * yy)
+                    y.append(math.sin(fi) * xx + math.cos(fi) * yy)
+                    z.append(zz)
+            elif t > T[0][3]:
+                xx = S2[0][0] * pow(t, 3) + S2[1][0] * pow(t, 2) + S2[2][0] * t + S2[3][0]          # формирование образующей
+                yy = S2[0][1] * pow(t, 3) + S2[1][1] * pow(t, 2) + S2[2][1] * t + S2[3][1]
+                zz = S2[0][2] * pow(t, 3) + S2[1][2] * pow(t, 2) + S2[2][2] * t + S2[3][2]
+                if (math.fabs(xx) <= size) and (math.fabs(yy) <= size) and (math.fabs(zz)):
+                    x.append(math.cos(fi) * xx - math.sin(fi) * yy)                                 # аффинное преобразование
+                    y.append(math.sin(fi) * xx + math.cos(fi) * yy)
+                    z.append(zz)
+            t += t_step
+            step+=1
+        fi += fi_step
+        
+    draw_kypol(x, y, z, step)
+
+
+class AddMesh(bpy.types.Operator):
+    bl_label = "Добавить"
+    bl_idname = "myops.add_kypol"
+       
+    x1 = bpy.props.FloatProperty(
+        name = "x",
+        default = 2.0,
+        min = -100.0)
+        
+    y1 = bpy.props.FloatProperty(
+        name = "y",
+        default = 0.0,
+        min = -100.0)
+    
+    z1 = bpy.props.FloatProperty(
+        name = "z",
+        default = 0.0,
+        min = -100.0)
+        
+    
+    x2 = bpy.props.FloatProperty(
+        name = "x",
+        default = 4.0,
+        min = -100.0)
+        
+    y2 = bpy.props.FloatProperty(
+        name = "y",
+        default = 0.0,
+        min = -100.0)
+    
+    z2 = bpy.props.FloatProperty(
+        name = "z",
+        default = 3.0,
+        min = -100.0)
+        
+    
+    x3 = bpy.props.FloatProperty(
+        name = "x",
+        default = 0.25,
+        min = -100.0)
+        
+    y3 = bpy.props.FloatProperty(
+        name = "y",
+        default = 0.0,
+        min = -100.0)
+    
+    z3 = bpy.props.FloatProperty(
+        name = "z",
+        default = 6.0,
+        min = -100.0)
+        
+        
+    x4 = bpy.props.FloatProperty(
+        name = "x",
+        default = 1.0,
+        min = -100.0)
+        
+    y4 = bpy.props.FloatProperty(
+        name = "y",
+        default = 0.0,
+        min = -100.0)
+      
+    z4 = bpy.props.FloatProperty(
+        name = "z",
+        default = 8.0,
+        min = -100.0)
+        
+        
+    x5 = bpy.props.FloatProperty(
+        name = "x",
+        default = 0.0,
+        min = -100.0)
+        
+    y5 = bpy.props.FloatProperty(
+        name = "y",
+        default = 0.0,
+        min = -100.0)
+      
+    z5 = bpy.props.FloatProperty(
+        name = "z",
+        default = 10.0,
+        min = -100.0)
+        
+        
+    x6 = bpy.props.FloatProperty(
+        name = "x",
+        default = 0.0,
+        min = -100.0)
+        
+    y6 = bpy.props.FloatProperty(
+        name = "y",
+        default = 0.0,
+        min = -100.0)
+      
+    z6 = bpy.props.FloatProperty(
+        name = "z",
+        default = 12.0,
+        min = -100.0)
+        
+    
+    t = bpy.props.FloatProperty(
+        name = "t",
+        default = 0.1,
+        min = -100.0)
+        
+        
+    fi = bpy.props.FloatProperty(
+        name = "fi",
+        default = 0.1,
+        min = -100.0)
+
+    def execute(self, context):
+       main(context, self.x1, self.y1, self.z1, self.x2, self.y2, self.z2, self.x3, self.y3, self.z3, self.x4, self.y4, self.z4,
+       self.x5, self.y5, self.z5, self.x6, self.y6, self.z6, self.t, self.fi)
+       return {'FINISHED'}
+   
+
+class DeleteMesh(bpy.types.Operator):
+    bl_label = "Удалить"
+    bl_idname = "myops.delete_kypol"
+    
+    def execute(self, context):
+        bpy.ops.object.select_all(action='DESELECT')    # убрать со всего выделение
+        bpy.data.objects['Kypol'].select = True         # выделить объект
+        bpy.ops.object.delete()                         # удалить объект
+        return {'FINISHED'}  
+
+
+class MeshPanel(bpy.types.Panel):
+    bl_label = "Создание поверхностей"
+    bl_idname = "OBJECT_PT_hello"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'TOOLS'
+    bl_category = "object"
+
+    def draw(self, context):
+        layout = self.layout
+
+        obj = context.object
+
+        row = layout.row()
+        col = layout.column(align = True)
+        
+        col.label(text="Первая вершина:")
+        col.prop(obj, "my_global_x1")
+        col.prop(obj, "my_global_y1")
+        col.prop(obj, "my_global_z1")
+        
+        col.label(text="Вторая вершина:")
+        col.prop(obj, "my_global_x2")
+        col.prop(obj, "my_global_y2")
+        col.prop(obj, "my_global_z2")
+        
+        col.label(text="Третья вершина:")
+        col.prop(obj, "my_global_x3")
+        col.prop(obj, "my_global_y3")
+        col.prop(obj, "my_global_z3")
+        
+        col.label(text="Четвертая вершина:")
+        col.prop(obj, "my_global_x4")
+        col.prop(obj, "my_global_y4")
+        col.prop(obj, "my_global_z4")
+        
+        col.label(text="Пятая вершина:")
+        col.prop(obj, "my_global_x5")
+        col.prop(obj, "my_global_y5")
+        col.prop(obj, "my_global_z5")
+        
+        col.label(text="Шестая вершина:")
+        col.prop(obj, "my_global_x6")
+        col.prop(obj, "my_global_y6")
+        col.prop(obj, "my_global_z6")
+        
+        row.prop(obj, "my_global_t")
+        
+        row.prop(obj, "my_global_fi")
+
+        props = layout.operator(AddMesh.bl_idname)
+        props.x1 = obj.my_global_x1
+        props.y1 = obj.my_global_y1
+        props.z1 = obj.my_global_z1
+        
+        props.x2 = obj.my_global_x2
+        props.y2 = obj.my_global_y2
+        props.z2 = obj.my_global_z2
+        
+        props.x3 = obj.my_global_x3
+        props.y3 = obj.my_global_y3
+        props.z3 = obj.my_global_z3
+        
+        props.x4 = obj.my_global_x4
+        props.y4 = obj.my_global_y4
+        props.z4 = obj.my_global_z4
+        
+        props.x5 = obj.my_global_x5
+        props.y5 = obj.my_global_y5
+        props.z5 = obj.my_global_z5
+        
+        props.x6 = obj.my_global_x6
+        props.y6 = obj.my_global_y6
+        props.z6 = obj.my_global_z6
+        
+        props.t = obj.my_global_t
+        props.fi = obj.my_global_fi
+        
+        layout.operator(DeleteMesh.bl_idname)
+
+
+def register():
+    bpy.utils.register_module(__name__)
+     
+    bpy.types.Object.my_global_x1 = bpy.props.FloatProperty(
+            name = "x",
+            default = 2.0,
+            min = -100.0)
+        
+    bpy.types.Object.my_global_y1 = bpy.props.FloatProperty(
+            name = "y",
+            default = 0.0,
+            min = -100.0)
+            
+    bpy.types.Object.my_global_z1 = bpy.props.FloatProperty(
+            name = "z",
+            default = 0.0,
+            min = -100.0)
+            
+            
+    bpy.types.Object.my_global_x2 = bpy.props.FloatProperty(
+            name = "x",
+            default = 4.0,
+            min = -100.0)
+        
+    bpy.types.Object.my_global_y2 = bpy.props.FloatProperty(
+            name = "y",
+            default = 0.0,
+            min = -100.0)
+            
+    bpy.types.Object.my_global_z2 = bpy.props.FloatProperty(
+            name = "z",
+            default = 3.0,
+            min = -100.0)
+            
+            
+    bpy.types.Object.my_global_x3 = bpy.props.FloatProperty(
+            name = "x",
+            default = 0.25,
+            min = -100.0)
+        
+    bpy.types.Object.my_global_y3 = bpy.props.FloatProperty(
+            name = "y",
+            default = 0.0,
+            min = -100.0)
+            
+    bpy.types.Object.my_global_z3 = bpy.props.FloatProperty(
+            name = "z",
+            default = 6.0,
+            min = -100.0)
+            
+    
+    bpy.types.Object.my_global_x4 = bpy.props.FloatProperty(
+            name = "x",
+            default = 1.0,
+            min = -100.0)
+        
+    bpy.types.Object.my_global_y4 = bpy.props.FloatProperty(
+            name = "y",
+            default = 0.0,
+            min = -100.0)
+            
+    bpy.types.Object.my_global_z4 = bpy.props.FloatProperty(
+            name = "z",
+            default = 8.0,
+            min = -100.0)
+            
+    
+    bpy.types.Object.my_global_x5 = bpy.props.FloatProperty(
+            name = "x",
+            default = 0.0,
+            min = -100.0)
+        
+    bpy.types.Object.my_global_y5 = bpy.props.FloatProperty(
+            name = "y",
+            default = 0.0,
+            min = -100.0)
+            
+    bpy.types.Object.my_global_z5 = bpy.props.FloatProperty(
+            name = "z",
+            default = 10.0,
+            min = -100.0)
+            
+            
+    bpy.types.Object.my_global_x6 = bpy.props.FloatProperty(
+            name = "x",
+            default = 0.0,
+            min = -100.0)
+        
+    bpy.types.Object.my_global_y6 = bpy.props.FloatProperty(
+            name = "y",
+            default = 0.0,
+            min = -100.0)
+            
+    bpy.types.Object.my_global_z6 = bpy.props.FloatProperty(
+            name = "z",
+            default = 12.0,
+            min = -100.0)
+            
+    
+    bpy.types.Object.my_global_t = bpy.props.FloatProperty(
+            name = "t",
+            default = 0.1,
+            min = -100.0)
+            
+            
+    bpy.types.Object.my_global_fi = bpy.props.FloatProperty(
+            name = "fi",
+            default = 0.1,
+            min = -100.0)
+            
+            
+def unregister():
+    bpy.utils.unregister_module(__name__)
+    del bpy.types.Object.my_global_x1
+    del bpy.types.Object.my_global_y1
+    del bpy.types.Object.my_global_z1
+    del bpy.types.Object.my_global_x2
+    del bpy.types.Object.my_global_y2
+    del bpy.types.Object.my_global_z2
+    del bpy.types.Object.my_global_x3
+    del bpy.types.Object.my_global_y3
+    del bpy.types.Object.my_global_z3
+    del bpy.types.Object.my_global_x5
+    del bpy.types.Object.my_global_y5
+    del bpy.types.Object.my_global_z5
+    del bpy.types.Object.my_global_x6
+    del bpy.types.Object.my_global_y6
+    del bpy.types.Object.my_global_z6
+    del bpy.types.Object.my_global_t
+    del bpy.types.Object.my_global_fi
+
+
+if __name__ == "__main__":
+   register()
