@@ -1,0 +1,48 @@
+clf;
+a = 1.5;
+b = 1;
+c = 1;
+
+r = [1; 0; 0];
+l_1 = [0; 1; 1];
+l_2 = [0; -1; 1];
+
+//!!!!!!!! t1 * t2 < 0 !!!!!!!!!!!
+t1 = -1;
+t2 = 1;
+step = 0.1;
+rad = 0.5;
+j = 1;
+k = 1;
+i = 1;
+M = [a, 0, 0; 0, b, 0; 0, 0, c];
+         
+for phi = 0: rad : 2 * %pi
+    A = [cos(phi),-sin(phi), 0; sin(phi), cos(phi), 0; 0, 0, 1];
+    for t = t1 : step : t2
+        T_1 = M * A *(r + (l_1*t));
+        X_1(i) = T_1(1);
+        Y_1(i) = T_1(2);
+        Z_1(i) = T_1(3) + t;
+        T_2 = M * A *(r + (l_2*t));
+        X_2(i) = T_2(1);
+        Y_2(i) = T_2(2);
+        Z_2(i) = T_2(3) + t;
+        
+        if (i == 1) then
+            XdownEdge(j) = X_1(i);
+            YdownEdge(j) = Y_1(i);
+            ZdownEdge(j) = Z_1(i);
+            j = j + 1;
+        end
+        if (i == 11) then
+            XupEdge(k) = X_1(i);
+            YupEdge(k) = Y_1(i);
+            ZupEdge(k) = Z_1(i);
+            k = k + 1;
+        end        
+        i = i + 1;
+    end
+    param3d(X_1, Y_1, Z_1);
+    param3d(X_2, Y_2, Z_2);
+end
