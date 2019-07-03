@@ -1,0 +1,73 @@
+clf();
+//полуоси гиперболоида
+a = [16.25, 13,    9.2,   6.5,   3.5,  1.8];
+b = [16.25, 13,    9.2,   6.5,   3.5,  1.8];
+c = [34.844,33.333,25.316,24.691,12.78,10.912];
+levels = [0,0,25;
+          0,0,50;
+          0,0,75;
+          0,0,95;
+          0,0,120;
+          0,0,145];
+fi_k =  15; // количество линий одного направления
+count = length(a); // количество уровней башни
+//матрицы параллельного переноса
+r = [1; 0; 0];
+l_1 = [0; 1; 1];
+l_2 = [0; -1; 1]; 
+t2 = 0; 
+
+for offset = 1 : count 
+    j = 1;
+    k = 1; 
+    for phi = 0: 2 * %pi / fi_k : 2 * %pi
+        i = 1
+        //матрица поворота вокруг оси
+        A = [cos(phi),-sin(phi), 0;
+             sin(phi), cos(phi), 0;
+             0,        0,        1];
+         //матрица масштабирования
+        M =[a(offset), 0,         0;
+            0,         b(offset), 0;
+            0,         0,         c(offset)];
+        L = [levels(offset,1);levels(offset,2);levels(offset,3)]
+        if(offset < count - 2 ) then
+            t_1 = -(25/c(offset))
+            t_2 = t2
+        else 
+            t_1 = -(20/c(offset));
+            t_2 = 5/c(offset);
+        end
+            for t = t_1 : (t_2 - t_1) / 10 : t_2
+                
+                T_1 = M * A *(r + (l_1*t)) + L;
+                x_1(i) = T_1(1);
+                y_1(i) = T_1(2);
+                z_1(i) = T_1(3) +  (t_2 - t_1) * c(offset);
+
+                T_2 = M * A *(r + (l_2*t)) + L;
+                x_2(i) = T_2(1);
+                y_2(i) = T_2(2);
+                z_2(i) = T_2(3) + (t_2 - t_1) * c(offset);
+                
+                if (i == 1) then
+                    x_down(j) = x_1(i);
+                    y_down(j) = y_1(i);
+                    z_down(j) = z_1(i);
+                    j = j + 1;
+                end
+
+                if (i == 11) then
+                    x_up(k) = x_1(i);
+                    y_up(k) = y_1(i);
+                    z_up(k) = z_1(i);
+                    k = k + 1;
+                end        
+                i = i + 1;
+            end
+        param3d(x_1, y_1, z_1);
+        param3d(x_2, y_2, z_2);
+    end
+    param3d(x_down, y_down, z_down);
+    param3d(x_up, y_up, z_up);
+end
